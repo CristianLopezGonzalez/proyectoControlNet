@@ -30,6 +30,7 @@ INSTALLED_APPS = [
     'turnos',
     'intercambios',
     'bolsa',
+    'auditoria',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
