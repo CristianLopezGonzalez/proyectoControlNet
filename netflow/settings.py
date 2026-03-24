@@ -28,6 +28,8 @@ INSTALLED_APPS = [
     'rest_framework',
     'usuarios',
     'turnos',
+    'intercambios',
+    'bolsa',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
