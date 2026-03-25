@@ -39,3 +39,18 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return f"{self.nombre} ({self.email})"
+
+
+class IntegracionGoogleCalendar(models.Model):
+    usuario = models.OneToOneField(Usuario, on_delete=models.CASCADE, related_name='google_calendar')
+    google_calendar_id = models.CharField(max_length=255, blank=True, null=True)
+    sincronizacion_activa = models.BooleanField(default=False)
+    ultima_sync = models.DateTimeField(null=True, blank=True)
+    
+    # Credenciales OAuth
+    access_token = models.CharField(max_length=2048, blank=True, null=True)
+    refresh_token = models.CharField(max_length=2048, blank=True, null=True)
+    token_expiry = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Google Calendar - {self.usuario.nombre}"
