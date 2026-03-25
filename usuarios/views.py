@@ -1,17 +1,35 @@
-from rest_framework import status
+from rest_framework import status, viewsets
 from rest_framework.response import Response
 from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.contrib.auth import authenticate
-from .serializers import RegisterSerializer, UsuarioSerializer
+
+from .models import Usuario, Equipo
+from .serializers import RegisterSerializer, UsuarioSerializer, EquipoSerializer
+from .permissions import IsAdmin, IsSupervisor, IsAdminOrSupervisor
+
+
+class UsuarioViewSet(viewsets.ModelViewSet):
+    queryset = Usuario.objects.all()
+    serializer_class = UsuarioSerializer
+    permission_classes = [IsAdmin]
+
+
+class EquipoViewSet(viewsets.ModelViewSet):
+    queryset = Equipo.objects.all()
+    serializer_class = EquipoSerializer
+    permission_classes = [IsAdminOrSupervisor]
+
+    def perform_create(self, serializer):
+        # Si un supervisor crea un equipo, él es el supervisor por defecto
+        if self.request.user.rol == 'supervisor':
+            serializer.save(supervisor=self.request.user)
+        else:
+            serializer.save()
 
 
 class RegisterView(APIView):
-    """
-    Crea un nuevo usuario en el sistema.
-    Asigna un rol por defecto y devuelve los tokens JWT iniciales.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -28,10 +46,6 @@ class RegisterView(APIView):
 
 
 class LoginView(APIView):
-    """
-    Autentica a un usuario por email y password.
-    Devuelve los tokens Access y Refresh si las credenciales son válidas.
-    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -49,11 +63,7 @@ class LoginView(APIView):
 
 
 class MeView(APIView):
-    """
-    Devuelve los datos del usuario autenticado (id, nombre, email, rol).
-    Requiere un token JWT válido.
-    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
-        return Response(UsuarioSerializer(request.user).data)
+        return Response(UsuarioSerializer(request.user).data)

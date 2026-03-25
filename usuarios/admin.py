@@ -1,8 +1,10 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin
-from .models import Usuario
+from .models import Usuario, Equipo, IntegracionGoogleCalendar
 
-@admin.register(Usuario)
+admin.site.register(Equipo)
+admin.site.register(IntegracionGoogleCalendar)
+
 class UsuarioAdmin(UserAdmin):
     list_display = ('email', 'nombre', 'rol', 'activo')
     ordering = ('email',)
@@ -18,3 +20,5 @@ class UsuarioAdmin(UserAdmin):
             'fields': ('email', 'nombre', 'password1', 'password2', 'rol'),
         }),
     )
+
+admin.site.register(Usuario, UsuarioAdmin)

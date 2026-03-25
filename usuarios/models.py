@@ -18,6 +18,15 @@ class UsuarioManager(BaseUserManager):
         return self.create_user(email, nombre, password, **extra_fields)
 
 
+class Equipo(models.Model):
+    nombre = models.CharField(max_length=100)
+    descripcion = models.TextField(blank=True)
+    supervisor = models.ForeignKey('Usuario', on_delete=models.SET_NULL, null=True, related_name='equipos_supervisados')
+
+    def __str__(self):
+        return self.nombre
+
+
 class Usuario(AbstractBaseUser, PermissionsMixin):
     ROL_CHOICES = [
         ('admin', 'Admin'),
@@ -28,6 +37,7 @@ class Usuario(AbstractBaseUser, PermissionsMixin):
     nombre = models.CharField(max_length=150)
     email = models.EmailField(unique=True)
     rol = models.CharField(max_length=20, choices=ROL_CHOICES, default='empleado')
+    equipo = models.ForeignKey(Equipo, on_delete=models.SET_NULL, null=True, blank=True, related_name='miembros')
     activo = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
