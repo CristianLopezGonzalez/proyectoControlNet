@@ -103,7 +103,3 @@ python manage.py runserver
 4. **Auditoría**: Cada cambio de estado en una solicitud o movimiento de bolsa genera un registro inmutable en `Auditoria`.
 
 ---
-
-## 📧 Contacto y Soporte
-
-Desarrollado para la gestión interna de turnos. Si tienes dudas sobre la conexión a Supabase o la lógica de la bolsa, consulta la documentación extendida en `docs/` o contacta con el administrador del sistema.
