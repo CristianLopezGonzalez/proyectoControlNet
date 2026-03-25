@@ -9,6 +9,7 @@ class Auditoria(models.Model):
         ('rechazar_intercambio', 'Rechazar intercambio'),
         ('cancelar_intercambio', 'Cancelar intercambio'),
         ('actualizar_bolsa', 'Actualizar bolsa'),
+        ('publicar_semana', 'Publicar semana'),
         ('sync_calendar', 'Sincronizar calendario'),
     ]
 
@@ -16,6 +17,7 @@ class Auditoria(models.Model):
         ('asignacion', 'Asignación'),
         ('solicitud', 'Solicitud'),
         ('bolsa', 'Bolsa'),
+        ('semana', 'Semana'),
     ]
 
     tipo_evento = models.CharField(max_length=50, choices=TIPO_EVENTO_CHOICES)
