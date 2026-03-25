@@ -8,6 +8,10 @@ from .serializers import RegisterSerializer, UsuarioSerializer
 
 
 class RegisterView(APIView):
+    """
+    Crea un nuevo usuario en el sistema.
+    Asigna un rol por defecto y devuelve los tokens JWT iniciales.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -24,6 +28,10 @@ class RegisterView(APIView):
 
 
 class LoginView(APIView):
+    """
+    Autentica a un usuario por email y password.
+    Devuelve los tokens Access y Refresh si las credenciales son válidas.
+    """
     permission_classes = [AllowAny]
 
     def post(self, request):
@@ -41,6 +49,10 @@ class LoginView(APIView):
 
 
 class MeView(APIView):
+    """
+    Devuelve los datos del usuario autenticado (id, nombre, email, rol).
+    Requiere un token JWT válido.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):

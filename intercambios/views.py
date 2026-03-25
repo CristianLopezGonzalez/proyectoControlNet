@@ -52,7 +52,11 @@ def _actualizar_saldo_bolsa(solicitante, receptor, modo_compensacion, solicitud)
 
 
 class IntercambioListCreateView(APIView):
-
+    """
+    POST /intercambios/
+    Permite a un empleado solicitar un intercambio de turno.
+    Valida la propiedad de la asignación y que el receptor esté activo.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request):
@@ -87,7 +91,10 @@ class IntercambioListCreateView(APIView):
 
 
 class IntercambioMiasView(APIView):
-
+    """
+    GET /intercambios/mias
+    Lista todas las solicitudes enviadas y recibidas por el usuario actual.
+    """
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
@@ -100,6 +107,11 @@ class IntercambioMiasView(APIView):
 
 
 class IntercambioAceptarView(APIView):
+    """
+    POST /intercambios/{id}/aceptar
+    Marca la solicitud como aceptada, intercambia las asignaciones de turno
+    y genera deuda en la bolsa si el modo es 'bolsa'.
+    """
     permission_classes = [IsAuthenticated]
 
     def post(self, request, pk):

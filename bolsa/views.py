@@ -14,7 +14,8 @@ from usuarios.models import Usuario
 
 class BolsaSaldosView(APIView):
     """
-    GET /bolsa/saldos  → todos los saldos del usuario autenticado
+    Muestra los saldos de días (deudas/ahorros) con los compañeros.
+    Devuelve todos los registros donde el usuario sea integrante (a ó b).
     """
     permission_classes = [IsAuthenticated]
 
@@ -28,7 +29,7 @@ class BolsaSaldosView(APIView):
 
 class BolsaSaldoUsuarioView(APIView):
     """
-    GET /bolsa/saldos/{usuarioId}  → saldo entre el usuario autenticado y otro usuario
+    Muestra el balance de días específico entre el usuario actual y otro compañero.
     """
     permission_classes = [IsAuthenticated]
 
@@ -51,7 +52,7 @@ class BolsaSaldoUsuarioView(APIView):
 
 class BolsaMovimientosView(APIView):
     """
-    GET /bolsa/movimientos  → historial de movimientos del usuario autenticado
+    Historial completo de movimientos de la bolsa (generaciones y compensaciones de deuda).
     """
     permission_classes = [IsAuthenticated]
 
@@ -65,8 +66,8 @@ class BolsaMovimientosView(APIView):
 
 class BolsaCompensarView(APIView):
     """
-    POST /bolsa/compensar  → compensar días manualmente hacia otro usuario
-    Body: { "usuario_destino_id": <int>, "dias": <int> }
+    Permite devolver un día de forma manual (sin intercambio de turno asociado).
+    Descuenta del saldo adeudado y genera auditoría.
     """
     permission_classes = [IsAuthenticated]
 

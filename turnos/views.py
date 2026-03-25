@@ -14,8 +14,8 @@ from .serializers import (
 
 class SemanaListCreateView(APIView):
     """
-    GET  /semanas        → listar todas las semanas
-    POST /semanas        → crear semana (solo admin/supervisor)
+    Lista y crea calendarios semanales.
+    Solo administradores y supervisores pueden crear semanas.
     """
     permission_classes = [IsAuthenticated]
 
@@ -36,7 +36,7 @@ class SemanaListCreateView(APIView):
 
 class SemanaDetailView(APIView):
     """
-    GET /semanas/{id}  → detalle de semana con asignaciones
+    Devuelve el detalle de una semana incluyendo todas sus asignaciones de tarde.
     """
     permission_classes = [IsAuthenticated]
 
@@ -56,7 +56,8 @@ class SemanaDetailView(APIView):
 
 class SemanaPublicarView(APIView):
     """
-    POST /semanas/{id}/publicar  → cambiar estado a publicado
+    Publica una semana, permitiendo que sea visible para los empleados.
+    Genera un registro de auditoría.
     """
     permission_classes = [IsAuthenticated]
 
@@ -86,7 +87,8 @@ class SemanaPublicarView(APIView):
 
 class AsignacionListCreateView(APIView):
     """
-    POST /asignaciones  → crear asignación (admin/supervisor)
+    Crea asignaciones individuales de tarde. 
+    Valida que no existan solapes en el mismo día/semana para el usuario.
     """
     permission_classes = [IsAuthenticated]
 
