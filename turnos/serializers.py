@@ -1,22 +1,56 @@
 from rest_framework import serializers
-from .models import CalendarioSemanal, AsignacionTarde
+from .models import (
+    CalendarioSemanal, PlantillaTurno, PatronRotacion,
+    Vacacion, Incidencia, AsignacionTurno
+)
 from usuarios.serializers import UsuarioSerializer
 
 
-class AsignacionTardeSerializer(serializers.ModelSerializer):
+class PlantillaTurnoSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PlantillaTurno
+        fields = '__all__'
+
+
+class PatronRotacionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PatronRotacion
+        fields = '__all__'
+
+
+class VacacionSerializer(serializers.ModelSerializer):
     usuario_detalle = UsuarioSerializer(source='usuario', read_only=True)
 
     class Meta:
-        model = AsignacionTarde
+        model = Vacacion
+        fields = '__all__'
+        read_only_fields = ('estado', 'fecha_solicitud')
+
+
+class IncidenciaSerializer(serializers.ModelSerializer):
+    usuario_detalle = UsuarioSerializer(source='usuario', read_only=True)
+
+    class Meta:
+        model = Incidencia
+        fields = '__all__'
+        read_only_fields = ('fecha_creacion',)
+
+
+class AsignacionTurnoSerializer(serializers.ModelSerializer):
+    usuario_detalle = UsuarioSerializer(source='usuario', read_only=True)
+    turno_plantilla_detalle = PlantillaTurnoSerializer(source='turno_plantilla', read_only=True)
+
+    class Meta:
+        model = AsignacionTurno
         fields = (
             'id', 'semana', 'usuario', 'usuario_detalle',
-            'dia', 'hora_inicio', 'hora_fin', 'estado'
+            'dia', 'turno_plantilla', 'turno_plantilla_detalle', 'estado'
         )
         read_only_fields = ('estado',)
 
 
 class CalendarioSemanalSerializer(serializers.ModelSerializer):
-    asignaciones = AsignacionTardeSerializer(many=True, read_only=True)
+    asignaciones = AsignacionTurnoSerializer(many=True, read_only=True)
 
     class Meta:
         model = CalendarioSemanal
@@ -29,8 +63,6 @@ class CalendarioSemanalSerializer(serializers.ModelSerializer):
 
 
 class CalendarioSemanalListSerializer(serializers.ModelSerializer):
-    """Serializer ligero para listados (sin asignaciones anidadas)."""
-
     class Meta:
         model = CalendarioSemanal
         fields = (

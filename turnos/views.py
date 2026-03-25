@@ -1,133 +1,151 @@
-from django.db import models as db_models
-from rest_framework import status
+from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.response import Response
-from rest_framework.views import APIView
 from rest_framework.permissions import IsAuthenticated
-from .models import CalendarioSemanal, AsignacionTarde
-from auditoria.models import Auditoria
+from django.utils import timezone
+from datetime import datetime, timedelta
+from django.db.models import Count, Q
+
+from .models import (
+    CalendarioSemanal, PlantillaTurno, PatronRotacion,
+    Vacacion, Incidencia, AsignacionTurno
+)
 from .serializers import (
     CalendarioSemanalSerializer,
     CalendarioSemanalListSerializer,
-    AsignacionTardeSerializer,
+    PlantillaTurnoSerializer,
+    PatronRotacionSerializer,
+    VacacionSerializer,
+    IncidenciaSerializer,
+    AsignacionTurnoSerializer,
 )
+from usuarios.models import Usuario, Equipo
 
 
-class SemanaListCreateView(APIView):
-    """
-    Lista y crea calendarios semanales.
-    Solo administradores y supervisores pueden crear semanas.
-    """
+class PlantillaTurnoViewSet(viewsets.ModelViewSet):
+    queryset = PlantillaTurno.objects.all()
+    serializer_class = PlantillaTurnoSerializer
     permission_classes = [IsAuthenticated]
 
-    def get(self, request):
-        semanas = CalendarioSemanal.objects.all().order_by('-anio', '-numero_semana')
-        serializer = CalendarioSemanalListSerializer(semanas, many=True)
-        return Response(serializer.data)
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            # Aquí se podría añadir un permiso custom IsAdmin
+            pass
+        return super().get_permissions()
 
-    def post(self, request):
+
+class PatronRotacionViewSet(viewsets.ModelViewSet):
+    queryset = PatronRotacion.objects.all()
+    serializer_class = PatronRotacionSerializer
+    permission_classes = [IsAuthenticated]
+
+
+class VacacionViewSet(viewsets.ModelViewSet):
+    queryset = Vacacion.objects.all()
+    serializer_class = VacacionSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.rol == 'empleado':
+            return self.queryset.filter(usuario=user)
+        elif user.rol == 'supervisor':
+            return self.queryset.filter(usuario__equipo__supervisor=user)
+        return self.queryset
+
+    @action(detail=True, methods=['post'], url_path='responder')
+    def responder(self, request, pk=None):
+        vacacion = self.get_object()
         if request.user.rol not in ('admin', 'supervisor'):
-            return Response({'error': 'No tienes permiso para crear semanas.'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = CalendarioSemanalSerializer(data=request.data)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'error': 'No tienes permiso'}, status=status.HTTP_403_FORBIDDEN)
+        
+        nuevo_estado = request.data.get('estado')
+        if nuevo_estado not in ('aprobada', 'rechazada'):
+            return Response({'error': 'Estado inválido'}, status=status.HTTP_400_BAD_REQUEST)
+        
+        vacacion.estado = nuevo_estado
+        vacacion.save()
+        return Response(VacacionSerializer(vacacion).data)
 
 
-class SemanaDetailView(APIView):
-    """
-    Devuelve el detalle de una semana incluyendo todas sus asignaciones de tarde.
-    """
+class IncidenciaViewSet(viewsets.ModelViewSet):
+    queryset = Incidencia.objects.all()
+    serializer_class = IncidenciaSerializer
     permission_classes = [IsAuthenticated]
 
-    def _get_semana(self, pk):
-        try:
-            return CalendarioSemanal.objects.get(pk=pk)
-        except CalendarioSemanal.DoesNotExist:
-            return None
-
-    def get(self, request, pk):
-        semana = self._get_semana(pk)
-        if not semana:
-            return Response({'error': 'Semana no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
-        serializer = CalendarioSemanalSerializer(semana)
-        return Response(serializer.data)
+    @action(detail=True, methods=['post'], url_path='resolver')
+    def resolver(self, request, pk=None):
+        incidencia = self.get_object()
+        incidencia.resuelta = True
+        incidencia.save()
+        return Response(IncidenciaSerializer(incidencia).data)
 
 
-class SemanaPublicarView(APIView):
-    """
-    Publica una semana, permitiendo que sea visible para los empleados.
-    Genera un registro de auditoría.
-    """
+class CalendarioSemanalViewSet(viewsets.ModelViewSet):
+    queryset = CalendarioSemanal.objects.all().order_by('-anio', '-numero_semana')
+    serializer_class = CalendarioSemanalSerializer
     permission_classes = [IsAuthenticated]
 
-    def post(self, request, pk):
-        if request.user.rol not in ('admin', 'supervisor'):
-            return Response({'error': 'No tienes permiso para publicar semanas.'}, status=status.HTTP_403_FORBIDDEN)
-        try:
-            semana = CalendarioSemanal.objects.get(pk=pk)
-        except CalendarioSemanal.DoesNotExist:
-            return Response({'error': 'Semana no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+    def get_serializer_class(self):
+        if self.action == 'list':
+            return CalendarioSemanalListSerializer
+        return CalendarioSemanalSerializer
 
-        if semana.estado == 'publicado':
-            return Response({'error': 'La semana ya está publicada.'}, status=status.HTTP_400_BAD_REQUEST)
-
+    @action(detail=True, methods=['post'], url_path='publicar')
+    def publicar(self, request, pk=None):
+        semana = self.get_object()
         semana.estado = 'publicado'
         semana.save()
-
-        Auditoria.objects.create(
-            tipo_evento='publicar_semana',
-            usuario=request.user,
-            entidad='semana',
-            id_entidad=semana.id
-        )
-
         return Response(CalendarioSemanalSerializer(semana).data)
 
+    @action(detail=False, methods=['post'], url_path='generar-desde-patron')
+    def generar_desde_patron(self, request):
+        patron_id = request.data.get('patron_id')
+        anio = request.data.get('anio')
+        numero_semana = request.data.get('numero_semana')
 
-class AsignacionListCreateView(APIView):
-    """
-    Crea asignaciones individuales de tarde. 
-    Valida que no existan solapes en el mismo día/semana para el usuario.
-    """
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        if request.user.rol not in ('admin', 'supervisor'):
-            return Response({'error': 'No tienes permiso para crear asignaciones.'}, status=status.HTTP_403_FORBIDDEN)
-        serializer = AsignacionTardeSerializer(data=request.data)
-        if serializer.is_valid():
-            # Validación de solape: mismo usuario, mismo día, misma fecha (vía semana)
-            # Aunque unique_together ayuda en la misma semana, esto es más explícito
-            data = serializer.validated_data
-            if AsignacionTarde.objects.filter(
-                usuario=data['usuario'],
-                dia=data['dia'],
-                semana__fecha_inicio_semana=data['semana'].fecha_inicio_semana
-            ).exists():
-                return Response({'error': 'Este usuario ya tiene una asignación para este día y semana.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            serializer.save()
-            return Response(serializer.data, status=status.HTTP_201_CREATED)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
-
-
-class AsignacionDetailView(APIView):
-    """
-    PATCH /asignaciones/{id}  → editar asignación (admin/supervisor)
-    """
-    permission_classes = [IsAuthenticated]
-
-    def patch(self, request, pk):
-        if request.user.rol not in ('admin', 'supervisor'):
-            return Response({'error': 'No tienes permiso para editar asignaciones.'}, status=status.HTTP_403_FORBIDDEN)
         try:
-            asignacion = AsignacionTarde.objects.get(pk=pk)
-        except AsignacionTarde.DoesNotExist:
-            return Response({'error': 'Asignación no encontrada.'}, status=status.HTTP_404_NOT_FOUND)
+            patron = PatronRotacion.objects.get(id=patron_id)
+            semana, _ = CalendarioSemanal.objects.get_or_create(
+                anio=anio, numero_semana=numero_semana,
+                defaults={'fecha_inicio_semana': datetime.now(), 'fecha_fin_semana': datetime.now() + timedelta(days=7)}
+            )
+        except PatronRotacion.DoesNotExist:
+            return Response({'error': 'Patron no encontrado'}, status=status.HTTP_404_NOT_FOUND)
 
-        serializer = AsignacionTardeSerializer(asignacion, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+        # Lógica de generación simplificada para el ejemplo
+        equipo = patron.equipo
+        empleados = equipo.miembros.all()
+        secuencia = patron.secuencia # Lista de IDs de PlantillaTurno
+        
+        dias = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+        
+        for i, emp in enumerate(empleados):
+            for j, dia in enumerate(dias):
+                plantilla_id = secuencia[ (i + j) % len(secuencia) ]
+                if plantilla_id:
+                    plantilla = PlantillaTurno.objects.get(id=plantilla_id)
+                    
+                    # Verificar vacaciones
+                    if not Vacacion.objects.filter(
+                        usuario=emp, 
+                        fecha_inicio__lte=semana.fecha_inicio_semana + timedelta(days=j),
+                        fecha_fin__gte=semana.fecha_inicio_semana + timedelta(days=j),
+                        estado='aprobada'
+                    ).exists():
+                        AsignacionTurno.objects.update_or_create(
+                            semana=semana, usuario=emp, dia=dia,
+                            defaults={'turno_plantilla': plantilla}
+                        )
+        
+        return Response({'status': 'Generación completada'}, status=status.HTTP_201_CREATED)
+
+
+class ReportesViewSet(viewsets.ViewSet):
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=False, methods=['get'], url_path='coverage')
+    def coverage(self, request):
+        # Ejemplo de reporte de cobertura
+        data = AsignacionTurno.objects.values('dia', 'turno_plantilla__nombre').annotate(count=Count('id'))
+        return Response(data)
