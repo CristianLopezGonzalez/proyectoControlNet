@@ -139,9 +139,20 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
     def _generar_turnos(self, patron_id, anio, numero_semana):
         try:
             patron = PatronRotacion.objects.get(id=patron_id)
+            
+            # Cálculo preciso de lunes y domingo de la semana ISO
+            # 4 de enero siempre está en la semana 1
+            jan4 = datetime(anio, 1, 4)
+            start_of_week1 = jan4 - timedelta(days=jan4.weekday())
+            fecha_inicio = start_of_week1 + timedelta(weeks=numero_semana - 1)
+            fecha_fin = fecha_inicio + timedelta(days=6)
+
             semana, _ = CalendarioSemanal.objects.get_or_create(
                 anio=anio, numero_semana=numero_semana,
-                defaults={'fecha_inicio_semana': datetime.now(), 'fecha_fin_semana': datetime.now() + timedelta(days=7)}
+                defaults={
+                    'fecha_inicio_semana': fecha_inicio.date(),
+                    'fecha_fin_semana': fecha_fin.date()
+                }
             )
         except PatronRotacion.DoesNotExist:
             return {'error': f'Patron {patron_id} no encontrado', 'status': status.HTTP_404_NOT_FOUND}
