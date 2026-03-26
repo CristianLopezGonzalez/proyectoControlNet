@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     CalendarioSemanal, PlantillaTurno, PatronRotacion,
-    Vacacion, Incidencia, AsignacionTurno
+    Vacacion, Incidencia, AsignacionTurno, ConfiguracionRegla
 )
 from usuarios.serializers import UsuarioSerializer
 
@@ -69,3 +69,9 @@ class CalendarioSemanalListSerializer(serializers.ModelSerializer):
             'id', 'anio', 'numero_semana',
             'fecha_inicio_semana', 'fecha_fin_semana', 'estado'
         )
+
+
+class ConfiguracionReglaSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = ConfiguracionRegla
+        fields = ('id', 'nombre', 'tipo', 'valor', 'activo')

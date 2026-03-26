@@ -13,7 +13,7 @@ from .permissions import IsAdmin, IsSupervisor, IsAdminOrSupervisor
 class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all()
     serializer_class = UsuarioSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsAdminOrSupervisor]
 
 
 class EquipoViewSet(viewsets.ModelViewSet):

@@ -8,7 +8,7 @@ from django.db.models import Count, Q
 
 from .models import (
     CalendarioSemanal, PlantillaTurno, PatronRotacion,
-    Vacacion, Incidencia, AsignacionTurno
+    Vacacion, Incidencia, AsignacionTurno, ConfiguracionRegla
 )
 from .serializers import (
     CalendarioSemanalSerializer,
@@ -18,6 +18,7 @@ from .serializers import (
     VacacionSerializer,
     IncidenciaSerializer,
     AsignacionTurnoSerializer,
+    ConfiguracionReglaSerializer,
 )
 from usuarios.models import Usuario, Equipo
 
@@ -90,6 +91,43 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
         if self.action == 'list':
             return CalendarioSemanalListSerializer
         return CalendarioSemanalSerializer
+
+    @action(detail=False, methods=['get'], url_path='month-view')
+    def month_view(self, request):
+        anio = request.query_params.get('anio')
+        mes = request.query_params.get('mes')
+        equipo_id = request.query_params.get('equipo_id')
+
+        if not anio or not mes:
+            return Response(
+                {'error': 'Se requieren los parámetros "anio" y "mes".'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            anio = int(anio)
+            mes = int(mes)
+        except ValueError:
+            return Response(
+                {'error': '"anio" y "mes" deben ser números enteros.'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        # Semanas que pertenecen al mes/año solicitado
+        semanas = CalendarioSemanal.objects.filter(
+            anio=anio,
+            fecha_inicio_semana__month__lte=mes,
+            fecha_fin_semana__month__gte=mes,
+        )
+
+        asignaciones_qs = AsignacionTurno.objects.filter(semana__in=semanas)
+        if equipo_id:
+            asignaciones_qs = asignaciones_qs.filter(usuario__equipo_id=equipo_id)
+
+        return Response({
+            'asignaciones': AsignacionTurnoSerializer(asignaciones_qs, many=True).data,
+            'semanas': CalendarioSemanalListSerializer(semanas, many=True).data,
+        })
 
     @action(detail=True, methods=['post'], url_path='publicar')
     def publicar(self, request, pk=None):
@@ -190,3 +228,28 @@ class ReportesViewSet(viewsets.ViewSet):
         # Ejemplo de reporte de cobertura
         data = AsignacionTurno.objects.values('dia', 'turno_plantilla__nombre').annotate(count=Count('id'))
         return Response(data)
+
+
+class AsignacionTurnoViewSet(viewsets.ModelViewSet):
+    queryset = AsignacionTurno.objects.select_related('semana', 'usuario', 'turno_plantilla').all()
+    serializer_class = AsignacionTurnoSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        qs = super().get_queryset()
+        semana_id = self.request.query_params.get('semana_id')
+        usuario_id = self.request.query_params.get('usuario_id')
+        equipo_id = self.request.query_params.get('equipo_id')
+        if semana_id:
+            qs = qs.filter(semana_id=semana_id)
+        if usuario_id:
+            qs = qs.filter(usuario_id=usuario_id)
+        if equipo_id:
+            qs = qs.filter(usuario__equipo_id=equipo_id)
+        return qs
+
+
+class ConfiguracionReglaViewSet(viewsets.ModelViewSet):
+    queryset = ConfiguracionRegla.objects.all()
+    serializer_class = ConfiguracionReglaSerializer
+    permission_classes = [IsAuthenticated]

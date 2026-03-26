@@ -53,27 +53,36 @@ def _actualizar_saldo_bolsa(solicitante, receptor, modo_compensacion, solicitud)
 
 class IntercambioListCreateView(APIView):
     """
-    POST /intercambios/
-    Permite a un empleado solicitar un intercambio de turno.
-    Valida la propiedad de la asignación y que el receptor esté activo.
+    GET  /intercambios/  - Lista solicitudes (todas para admin/supervisor, propias para empleado)
+    POST /intercambios/  - Crea una nueva solicitud de intercambio.
     """
     permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        if user.rol in ('admin', 'supervisor'):
+            solicitudes = SolicitudIntercambio.objects.all().order_by('-fecha_creacion')
+        else:
+            solicitudes = SolicitudIntercambio.objects.filter(
+                db_models.Q(solicitante=user) | db_models.Q(receptor=user)
+            ).order_by('-fecha_creacion')
+        return Response(SolicitudIntercambioSerializer(solicitudes, many=True).data)
 
     def post(self, request):
         serializer = CrearSolicitudSerializer(data=request.data)
         if serializer.is_valid():
             data = serializer.validated_data
-            
+
             # Validaciones de negocio
             if not data['receptor'].activo:
                 return Response({'error': 'El usuario receptor no está activo.'}, status=status.HTTP_400_BAD_REQUEST)
             if data['asignacion_origen'].usuario != request.user:
-                return Response({'error': 'La asignación de origen no te pertenece.'}, status=status.HTTP_430_FORBIDDEN)
+                return Response({'error': 'La asignación de origen no te pertenece.'}, status=status.HTTP_403_FORBIDDEN)
             if data.get('asignacion_destino') and data['asignacion_destino'].usuario != data['receptor']:
                 return Response({'error': 'La asignación de destino no pertenece al receptor.'}, status=status.HTTP_400_BAD_REQUEST)
 
             solicitud = serializer.save(solicitante=request.user)
-            
+
             # Auditoria
             Auditoria.objects.create(
                 tipo_evento='crear_intercambio',

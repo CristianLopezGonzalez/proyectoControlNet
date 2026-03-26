@@ -113,3 +113,19 @@ class AsignacionTurno(models.Model):
 
     def __str__(self):
         return f"{self.usuario.nombre} - {self.dia} ({self.turno_plantilla.nombre})"
+
+
+class ConfiguracionRegla(models.Model):
+    TIPO_CHOICES = [
+        ('limite_horas', 'Límite de Horas'),
+        ('descanso_min', 'Descanso Mínimo'),
+        ('max_turnos', 'Máximo de Turnos'),
+    ]
+
+    nombre = models.CharField(max_length=100)
+    tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, unique=True)
+    valor = models.FloatField()
+    activo = models.BooleanField(default=True)
+
+    def __str__(self):
+        return f"{self.nombre} ({self.tipo}: {self.valor})"
