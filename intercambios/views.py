@@ -32,7 +32,7 @@ def _actualizar_saldo_bolsa(solicitante, receptor, modo_compensacion, solicitud)
 
     saldo_obj.save()
 
-    BolsaDiasMovimiento.objects.create(
+    movimiento = BolsaDiasMovimiento.objects.create(
         saldo=saldo_obj,
         origen_usuario=solicitante,
         destino_usuario=receptor,
@@ -68,7 +68,7 @@ class IntercambioListCreateView(APIView):
             if not data['receptor'].activo:
                 return Response({'error': 'El usuario receptor no está activo.'}, status=status.HTTP_400_BAD_REQUEST)
             if data['asignacion_origen'].usuario != request.user:
-                return Response({'error': 'La asignación de origen no te pertenece.'}, status=status.HTTP_403_FORBIDDEN)
+                return Response({'error': 'La asignación de origen no te pertenece.'}, status=status.HTTP_430_FORBIDDEN)
             if data.get('asignacion_destino') and data['asignacion_destino'].usuario != data['receptor']:
                 return Response({'error': 'La asignación de destino no pertenece al receptor.'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -107,38 +107,6 @@ class IntercambioMiasView(APIView):
 
 
 from turnos.models import AsignacionTurno
-
-
-class IntercambioListCreateView(APIView):
-    permission_classes = [IsAuthenticated]
-
-    def post(self, request):
-        serializer = CrearSolicitudSerializer(data=request.data)
-        if serializer.is_valid():
-            data = serializer.validated_data
-            
-            if not data['receptor'].activo:
-                return Response({'error': 'El usuario receptor no está activo.'}, status=status.HTTP_400_BAD_REQUEST)
-            if data['asignacion_origen'].usuario != request.user:
-                return Response({'error': 'La asignación de origen no te pertenece.'}, status=status.HTTP_403_FORBIDDEN)
-            if data.get('asignacion_destino') and data['asignacion_destino'].usuario != data['receptor']:
-                return Response({'error': 'La asignación de destino no pertenece al receptor.'}, status=status.HTTP_400_BAD_REQUEST)
-
-            solicitud = serializer.save(solicitante=request.user)
-            
-            Auditoria.objects.create(
-                tipo_evento='crear_intercambio',
-                usuario=request.user,
-                entidad='solicitud',
-                id_entidad=solicitud.id,
-                metadata={'tipo': solicitud.tipo, 'receptor': solicitud.receptor.id}
-            )
-
-            return Response(
-                SolicitudIntercambioSerializer(solicitud).data,
-                status=status.HTTP_201_CREATED
-            )
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class IntercambioAceptarView(APIView):

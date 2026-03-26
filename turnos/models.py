@@ -60,6 +60,7 @@ class Vacacion(models.Model):
     fecha_fin = models.DateField()
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES, default='vacacion')
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
+    comentario = models.TextField(blank=True, null=True)
     fecha_solicitud = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

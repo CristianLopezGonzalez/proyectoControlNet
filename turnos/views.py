@@ -98,12 +98,7 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
         semana.save()
         return Response(CalendarioSemanalSerializer(semana).data)
 
-    @action(detail=False, methods=['post'], url_path='generar-desde-patron')
-    def generar_desde_patron(self, request):
-        patron_id = request.data.get('patron_id')
-        anio = request.data.get('anio')
-        numero_semana = request.data.get('numero_semana')
-
+    def _generar_turnos(self, patron_id, anio, numero_semana):
         try:
             patron = PatronRotacion.objects.get(id=patron_id)
             semana, _ = CalendarioSemanal.objects.get_or_create(
@@ -111,34 +106,80 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
                 defaults={'fecha_inicio_semana': datetime.now(), 'fecha_fin_semana': datetime.now() + timedelta(days=7)}
             )
         except PatronRotacion.DoesNotExist:
-            return Response({'error': 'Patron no encontrado'}, status=status.HTTP_404_NOT_FOUND)
+            return {'error': f'Patron {patron_id} no encontrado', 'status': status.HTTP_404_NOT_FOUND}
 
-        # Lógica de generación simplificada para el ejemplo
         equipo = patron.equipo
+        
+        # Limpiar turnos solo para este equipo en esta semana (modo bulk-friendly)
+        AsignacionTurno.objects.filter(semana=semana, usuario__equipo=equipo.id).delete()
+
         empleados = equipo.miembros.all()
-        secuencia = patron.secuencia # Lista de IDs de PlantillaTurno
+        secuencia = patron.secuencia
         
         dias = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
         
+        # Asegurarnos de que fecha_inicio_semana sea date (por si django lo guarda como tal)
+        fecha_inicio_semana_date = semana.fecha_inicio_semana
+        if isinstance(fecha_inicio_semana_date, datetime):
+            fecha_inicio_semana_date = fecha_inicio_semana_date.date()
+            
+        patron_fecha_inicio = patron.fecha_inicio
+        if isinstance(patron_fecha_inicio, datetime):
+            patron_fecha_inicio = patron_fecha_inicio.date()
+
         for i, emp in enumerate(empleados):
             for j, dia in enumerate(dias):
-                plantilla_id = secuencia[ (i + j) % len(secuencia) ]
+                # Fórmula de rotación basada en el desplazamiento temporal continuo
+                fecha_dia = fecha_inicio_semana_date + timedelta(days=j)
+                desplazamiento_dias = (fecha_dia - patron_fecha_inicio).days
+                
+                if len(secuencia) > 0:
+                    plantilla_id = secuencia[ (i + desplazamiento_dias) % len(secuencia) ]
+                else:
+                    plantilla_id = None
+                
                 if plantilla_id:
-                    plantilla = PlantillaTurno.objects.get(id=plantilla_id)
-                    
-                    # Verificar vacaciones
-                    if not Vacacion.objects.filter(
-                        usuario=emp, 
-                        fecha_inicio__lte=semana.fecha_inicio_semana + timedelta(days=j),
-                        fecha_fin__gte=semana.fecha_inicio_semana + timedelta(days=j),
-                        estado='aprobada'
-                    ).exists():
-                        AsignacionTurno.objects.update_or_create(
-                            semana=semana, usuario=emp, dia=dia,
-                            defaults={'turno_plantilla': plantilla}
-                        )
-        
+                    try:
+                        plantilla = PlantillaTurno.objects.get(id=plantilla_id)
+                        # Verificar vacaciones
+                        if not Vacacion.objects.filter(
+                            usuario=emp, 
+                            fecha_inicio__lte=fecha_dia,
+                            fecha_fin__gte=fecha_dia,
+                            estado='aprobada'
+                        ).exists():
+                            AsignacionTurno.objects.update_or_create(
+                                semana=semana, usuario=emp, dia=dia,
+                                defaults={'turno_plantilla': plantilla}
+                            )
+                    except PlantillaTurno.DoesNotExist:
+                        pass
+        return None
+
+    @action(detail=False, methods=['post'], url_path='generar')
+    def generar(self, request):
+        if isinstance(request.data, list):
+            # Modo bulk
+            for item in request.data:
+                res = self._generar_turnos(item.get('patron_id'), item.get('anio'), item.get('numero_semana'))
+                if res: return Response(res, status=res['status'])
+        else:
+            res = self._generar_turnos(request.data.get('patron_id'), request.data.get('anio'), request.data.get('numero_semana'))
+            if res: return Response(res, status=res['status'])
+            
         return Response({'status': 'Generación completada'}, status=status.HTTP_201_CREATED)
+
+    @action(detail=False, methods=['post'], url_path='generar-seleccion')
+    def generar_seleccion(self, request):
+        if isinstance(request.data, list):
+            for item in request.data:
+                res = self._generar_turnos(item.get('patron_id'), item.get('anio'), item.get('numero_semana'))
+                if res: return Response(res, status=res['status'])
+        else:
+            res = self._generar_turnos(request.data.get('patron_id'), request.data.get('anio'), request.data.get('numero_semana'))
+            if res: return Response(res, status=res['status'])
+            
+        return Response({'status': 'Generación selección completada'}, status=status.HTTP_201_CREATED)
 
 
 class ReportesViewSet(viewsets.ViewSet):
