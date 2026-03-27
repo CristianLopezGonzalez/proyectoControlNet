@@ -36,15 +36,26 @@ class IncidenciaSerializer(serializers.ModelSerializer):
         read_only_fields = ('fecha_creacion',)
 
 
+class CalendarioSemanalListSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = CalendarioSemanal
+        fields = (
+            'id', 'anio', 'numero_semana',
+            'fecha_inicio_semana', 'fecha_fin_semana', 'estado'
+        )
+
+
 class AsignacionTurnoSerializer(serializers.ModelSerializer):
     usuario_detalle = UsuarioSerializer(source='usuario', read_only=True)
     turno_plantilla_detalle = PlantillaTurnoSerializer(source='turno_plantilla', read_only=True)
+    semana_detalle = CalendarioSemanalListSerializer(source='semana', read_only=True)
 
     class Meta:
         model = AsignacionTurno
         fields = (
             'id', 'semana', 'usuario', 'usuario_detalle',
-            'dia', 'turno_plantilla', 'turno_plantilla_detalle', 'estado'
+            'dia', 'turno_plantilla', 'turno_plantilla_detalle', 
+            'semana_detalle', 'estado'
         )
         read_only_fields = ('estado',)
 
@@ -61,14 +72,6 @@ class CalendarioSemanalSerializer(serializers.ModelSerializer):
         )
         read_only_fields = ('estado',)
 
-
-class CalendarioSemanalListSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = CalendarioSemanal
-        fields = (
-            'id', 'anio', 'numero_semana',
-            'fecha_inicio_semana', 'fecha_fin_semana', 'estado'
-        )
 
 
 class ConfiguracionReglaSerializer(serializers.ModelSerializer):

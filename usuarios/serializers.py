@@ -5,10 +5,15 @@ from .models import Usuario, Equipo
 class EquipoSerializer(serializers.ModelSerializer):
     supervisor_nombre = serializers.ReadOnlyField(source='supervisor.nombre')
     miembros_detalle = serializers.SerializerMethodField()
+    miembros = serializers.PrimaryKeyRelatedField(
+        many=True,
+        queryset=Usuario.objects.all(),
+        required=False
+    )
 
     class Meta:
         model = Equipo
-        fields = ('id', 'nombre', 'descripcion', 'supervisor', 'supervisor_nombre', 'miembros_detalle')
+        fields = ('id', 'nombre', 'descripcion', 'supervisor', 'supervisor_nombre', 'miembros', 'miembros_detalle')
 
     def get_miembros_detalle(self, obj):
         # Retorna info estructurada para no causar dependencias circulares masivas (nested objects)
