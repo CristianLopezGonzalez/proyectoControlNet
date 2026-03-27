@@ -139,24 +139,37 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
     def _generar_turnos(self, patron_id, anio, numero_semana):
         try:
             patron = PatronRotacion.objects.get(id=patron_id)
+            
+            # Cálculo preciso de lunes y domingo de la semana ISO
+            jan4 = datetime(anio, 1, 4)
+            start_of_week1 = jan4 - timedelta(days=jan4.weekday())
+            fecha_inicio = start_of_week1 + timedelta(weeks=numero_semana - 1)
+            fecha_fin = fecha_inicio + timedelta(days=6)
+
             semana, _ = CalendarioSemanal.objects.get_or_create(
                 anio=anio, numero_semana=numero_semana,
-                defaults={'fecha_inicio_semana': datetime.now(), 'fecha_fin_semana': datetime.now() + timedelta(days=7)}
+                defaults={
+                    'fecha_inicio_semana': fecha_inicio.date(),
+                    'fecha_fin_semana': fecha_fin.date()
+                }
             )
         except PatronRotacion.DoesNotExist:
             return {'error': f'Patron {patron_id} no encontrado', 'status': status.HTTP_404_NOT_FOUND}
 
         equipo = patron.equipo
         
-        # Limpiar turnos solo para este equipo en esta semana (modo bulk-friendly)
+        # Limpiar turnos solo para este equipo en esta semana
         AsignacionTurno.objects.filter(semana=semana, usuario__equipo=equipo.id).delete()
 
-        empleados = equipo.miembros.all()
+        empleados = list(equipo.miembros.all())
         secuencia = patron.secuencia
         
+        if not secuencia:
+            return None # No hay secuencia, no se genera nada
+            
         dias = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
         
-        # Asegurarnos de que fecha_inicio_semana sea date (por si django lo guarda como tal)
+        # Asegurarnos de usar date()
         fecha_inicio_semana_date = semana.fecha_inicio_semana
         if isinstance(fecha_inicio_semana_date, datetime):
             fecha_inicio_semana_date = fecha_inicio_semana_date.date()
@@ -165,33 +178,50 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
         if isinstance(patron_fecha_inicio, datetime):
             patron_fecha_inicio = patron_fecha_inicio.date()
 
+        # OPTIMIZACIÓN 1: Obtener TODAS las vacaciones de este equipo para esta semana en 1 sola query
+        vacaciones_aprobadas = Vacacion.objects.filter(
+            usuario__in=empleados,
+            estado='aprobada',
+            fecha_inicio__lte=fecha_fin,
+            fecha_fin__gte=fecha_inicio
+        )
+        
+        # Guardaremos las fechas de vacaciones por usuario en un diccionario para acceso ultra-rápido en memoria
+        vacaciones_por_usuario = {emp.id: [] for emp in empleados}
+        for vac in vacaciones_aprobadas:
+            current_date = vac.fecha_inicio
+            while current_date <= vac.fecha_fin:
+                vacaciones_por_usuario[vac.usuario_id].append(current_date)
+                current_date += timedelta(days=1)
+
+        # OPTIMIZACIÓN 2: Preparar la lista de asignaciones para hacer un único bulk_create
+        nuevas_asignaciones = []
+
         for i, emp in enumerate(empleados):
             for j, dia in enumerate(dias):
-                # Fórmula de rotación basada en el desplazamiento temporal continuo
+                # Fórmula de rotación
                 fecha_dia = fecha_inicio_semana_date + timedelta(days=j)
                 desplazamiento_dias = (fecha_dia - patron_fecha_inicio).days
                 
-                if len(secuencia) > 0:
-                    plantilla_id = secuencia[ (i + desplazamiento_dias) % len(secuencia) ]
-                else:
-                    plantilla_id = None
+                plantilla_id = secuencia[ (i + desplazamiento_dias) % len(secuencia) ]
                 
                 if plantilla_id:
-                    try:
-                        plantilla = PlantillaTurno.objects.get(id=plantilla_id)
-                        # Verificar vacaciones
-                        if not Vacacion.objects.filter(
-                            usuario=emp, 
-                            fecha_inicio__lte=fecha_dia,
-                            fecha_fin__gte=fecha_dia,
-                            estado='aprobada'
-                        ).exists():
-                            AsignacionTurno.objects.update_or_create(
-                                semana=semana, usuario=emp, dia=dia,
-                                defaults={'turno_plantilla': plantilla}
+                    # Verificar si la fecha actual está en las vacaciones del usuario
+                    if fecha_dia not in vacaciones_por_usuario[emp.id]:
+                        # No necesitamos la instancia PlantillaTurno, podemos pasar el ID directamente
+                        nuevas_asignaciones.append(
+                            AsignacionTurno(
+                                semana=semana,
+                                usuario=emp,
+                                dia=dia,
+                                turno_plantilla_id=plantilla_id
                             )
-                    except PlantillaTurno.DoesNotExist:
-                        pass
+                        )
+                        
+        # OPTIMIZACIÓN 3: Guardar en BD todo de golpe
+        if nuevas_asignaciones:
+            AsignacionTurno.objects.bulk_create(nuevas_asignaciones)
+            
         return None
 
     @action(detail=False, methods=['post'], url_path='generar')
