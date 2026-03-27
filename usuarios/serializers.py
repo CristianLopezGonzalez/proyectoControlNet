@@ -3,15 +3,19 @@ from .models import Usuario, Equipo
 
 
 class EquipoSerializer(serializers.ModelSerializer):
+    supervisor_nombre = serializers.ReadOnlyField(source='supervisor.nombre')
+
     class Meta:
         model = Equipo
-        fields = ('id', 'nombre', 'descripcion', 'supervisor')
+        fields = ('id', 'nombre', 'descripcion', 'supervisor', 'supervisor_nombre')
 
 
 class UsuarioSerializer(serializers.ModelSerializer):
+    equipo_nombre = serializers.ReadOnlyField(source='equipo.nombre')
+
     class Meta:
         model = Usuario
-        fields = ('id', 'nombre', 'email', 'rol', 'activo', 'equipo')
+        fields = ('id', 'nombre', 'email', 'rol', 'activo', 'equipo', 'equipo_nombre')
 
 
 class RegisterSerializer(serializers.ModelSerializer):

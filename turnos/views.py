@@ -141,6 +141,7 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
             patron = PatronRotacion.objects.get(id=patron_id)
             
             # Cálculo preciso de lunes y domingo de la semana ISO
+            # 4 de enero siempre está en la semana 1
             jan4 = datetime(anio, 1, 4)
             start_of_week1 = jan4 - timedelta(days=jan4.weekday())
             fecha_inicio = start_of_week1 + timedelta(weeks=numero_semana - 1)
