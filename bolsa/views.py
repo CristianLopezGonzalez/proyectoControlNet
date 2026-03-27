@@ -90,16 +90,18 @@ class BolsaCompensarView(APIView):
         # Normalizar par
         if request.user.id < destino.id:
             usuario_a, usuario_b = request.user, destino
-            saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
-            if saldo_obj.saldo_dias_a_favor_de_b < dias:
-                return Response({'error': f'Solo debes {saldo_obj.saldo_dias_a_favor_de_b} días a este usuario.'}, status=status.HTTP_400_BAD_REQUEST)
+            saldo_obj = BolsaDiasSaldo.objects.filter(usuario_a=usuario_a, usuario_b=usuario_b).first()
+            dias_a_favor = saldo_obj.saldo_dias_a_favor_de_b if saldo_obj else 0
+            if dias_a_favor < dias:
+                return Response({'error': f'Solo debes {dias_a_favor} días a este usuario.'}, status=status.HTTP_400_BAD_REQUEST)
             # El solicitante (a) compensa al destino (b) → reduce deuda de a hacia b
             saldo_obj.saldo_dias_a_favor_de_b -= dias
         else:
             usuario_a, usuario_b = destino, request.user
-            saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
-            if saldo_obj.saldo_dias_a_favor_de_a < dias:
-                return Response({'error': f'Solo debes {saldo_obj.saldo_dias_a_favor_de_a} días a este usuario.'}, status=status.HTTP_400_BAD_REQUEST)
+            saldo_obj = BolsaDiasSaldo.objects.filter(usuario_a=usuario_a, usuario_b=usuario_b).first()
+            dias_a_favor = saldo_obj.saldo_dias_a_favor_de_a if saldo_obj else 0
+            if dias_a_favor < dias:
+                return Response({'error': f'Solo debes {dias_a_favor} días a este usuario.'}, status=status.HTTP_400_BAD_REQUEST)
             # El solicitante (b) compensa al destino (a) → reduce deuda de b hacia a
             saldo_obj.saldo_dias_a_favor_de_a -= dias
 

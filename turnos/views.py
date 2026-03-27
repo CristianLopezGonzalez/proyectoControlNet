@@ -21,24 +21,27 @@ from .serializers import (
     ConfiguracionReglaSerializer,
 )
 from usuarios.models import Usuario, Equipo
+from usuarios.permissions import IsAdminOrSupervisor
 
 
 class PlantillaTurnoViewSet(viewsets.ModelViewSet):
     queryset = PlantillaTurno.objects.all()
     serializer_class = PlantillaTurnoSerializer
-    permission_classes = [IsAuthenticated]
-
+    
     def get_permissions(self):
         if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            # Aquí se podría añadir un permiso custom IsAdmin
-            pass
-        return super().get_permissions()
+            return [IsAdminOrSupervisor()]
+        return [IsAuthenticated()]
 
 
 class PatronRotacionViewSet(viewsets.ModelViewSet):
     queryset = PatronRotacion.objects.all()
     serializer_class = PatronRotacionSerializer
-    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdminOrSupervisor()]
+        return [IsAuthenticated()]
 
 
 class VacacionViewSet(viewsets.ModelViewSet):
@@ -76,6 +79,9 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], url_path='resolver')
     def resolver(self, request, pk=None):
+        if request.user.rol not in ('admin', 'supervisor'):
+            return Response({'error': 'No tienes permiso para resolver incidencias'}, status=status.HTTP_403_FORBIDDEN)
+            
         incidencia = self.get_object()
         incidencia.resuelta = True
         incidencia.save()
@@ -85,7 +91,11 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
 class CalendarioSemanalViewSet(viewsets.ModelViewSet):
     queryset = CalendarioSemanal.objects.all().order_by('-anio', '-numero_semana')
     serializer_class = CalendarioSemanalSerializer
-    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy', 'generar', 'generar_seleccion', 'publicar']:
+            return [IsAdminOrSupervisor()]
+        return [IsAuthenticated()]
 
     def get_serializer_class(self):
         if self.action == 'list':
@@ -262,7 +272,11 @@ class ReportesViewSet(viewsets.ViewSet):
 class AsignacionTurnoViewSet(viewsets.ModelViewSet):
     queryset = AsignacionTurno.objects.select_related('semana', 'usuario', 'turno_plantilla').all()
     serializer_class = AsignacionTurnoSerializer
-    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdminOrSupervisor()]
+        return [IsAuthenticated()]
 
     def get_queryset(self):
         qs = super().get_queryset()
@@ -281,4 +295,8 @@ class AsignacionTurnoViewSet(viewsets.ModelViewSet):
 class ConfiguracionReglaViewSet(viewsets.ModelViewSet):
     queryset = ConfiguracionRegla.objects.all()
     serializer_class = ConfiguracionReglaSerializer
-    permission_classes = [IsAuthenticated]
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdminOrSupervisor()]
+        return [IsAuthenticated()]

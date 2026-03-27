@@ -7,4 +7,5 @@ urlpatterns = [
     path('turnos/', include('turnos.urls')),
     path('intercambios/', include('intercambios.urls')),
     path('bolsa/', include('bolsa.urls')),
+    path('auditoria/', include('auditoria.urls')),
 ]

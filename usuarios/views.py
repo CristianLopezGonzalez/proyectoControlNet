@@ -13,16 +13,44 @@ from .permissions import IsAdmin, IsSupervisor, IsAdminOrSupervisor
 class UsuarioViewSet(viewsets.ModelViewSet):
     queryset = Usuario.objects.all()
     serializer_class = UsuarioSerializer
-    permission_classes = [IsAdminOrSupervisor]
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdminOrSupervisor()]
+        return [IsAuthenticated()]
+
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        if request.user.rol == 'supervisor' and self.action in ['update', 'partial_update', 'destroy']:
+            # Un supervisor solo puede editar un usuario si pertenece a alguno de sus equipos
+            if not obj.equipo or obj.equipo.supervisor != request.user:
+                self.permission_denied(request, message='No tienes permiso para modificar a un usuario de otro equipo.')
 
 
 class EquipoViewSet(viewsets.ModelViewSet):
     queryset = Equipo.objects.all()
     serializer_class = EquipoSerializer
-    permission_classes = [IsAdminOrSupervisor]
+    
+    def get_permissions(self):
+        if self.action in ['create', 'update', 'partial_update', 'destroy']:
+            return [IsAdminOrSupervisor()]
+        return [IsAuthenticated()]
+
+    def check_object_permissions(self, request, obj):
+        super().check_object_permissions(request, obj)
+        if request.user.rol == 'supervisor' and self.action in ['update', 'partial_update', 'destroy']:
+            if obj.supervisor != request.user:
+                self.permission_denied(request, message='Solo puedes gestionar tus propios equipos.')
 
     def perform_create(self, serializer):
         # Si un supervisor crea un equipo, él es el supervisor por defecto
+        if self.request.user.rol == 'supervisor':
+            serializer.save(supervisor=self.request.user)
+        else:
+            serializer.save()
+
+    def perform_update(self, serializer):
+        # Impedir que un supervisor transfiera su equipo a otro usuario mediante la API
         if self.request.user.rol == 'supervisor':
             serializer.save(supervisor=self.request.user)
         else:
