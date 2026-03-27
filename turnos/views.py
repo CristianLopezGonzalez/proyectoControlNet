@@ -107,27 +107,37 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
         try:
             anio = int(anio)
             mes = int(mes)
-        except ValueError:
+        except (ValueError, TypeError):
             return Response(
                 {'error': '"anio" y "mes" deben ser números enteros.'},
                 status=status.HTTP_400_BAD_REQUEST
             )
 
-        # Semanas que pertenecen al mes/año solicitado
-        semanas = CalendarioSemanal.objects.filter(
-            anio=anio,
-            fecha_inicio_semana__month__lte=mes,
-            fecha_fin_semana__month__gte=mes,
-        )
+        try:
+            # Semanas que pertenecen al mes/año solicitado
+            semanas = CalendarioSemanal.objects.filter(
+                anio=anio,
+                fecha_inicio_semana__month__lte=mes,
+                fecha_fin_semana__month__gte=mes,
+            )
 
-        asignaciones_qs = AsignacionTurno.objects.filter(semana__in=semanas)
-        if equipo_id:
-            asignaciones_qs = asignaciones_qs.filter(usuario__equipo_id=equipo_id)
+            # Optimizamos asignaciones con select_related para evitar N+1 queries en los Serializers
+            asignaciones_qs = AsignacionTurno.objects.filter(semana__in=semanas).select_related(
+                'semana',
+                'usuario',
+                'usuario__equipo',
+                'turno_plantilla'
+            )
 
-        return Response({
-            'asignaciones': AsignacionTurnoSerializer(asignaciones_qs, many=True).data,
-            'semanas': CalendarioSemanalListSerializer(semanas, many=True).data,
-        })
+            if equipo_id:
+                asignaciones_qs = asignaciones_qs.filter(usuario__equipo_id=equipo_id)
+
+            return Response({
+                'asignaciones': AsignacionTurnoSerializer(asignaciones_qs, many=True).data,
+                'semanas': CalendarioSemanalListSerializer(semanas, many=True).data,
+            })
+        except Exception as e:
+            return Response({'error': f'Ocurrió un error en el servidor: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=True, methods=['post'], url_path='publicar')
     def publicar(self, request, pk=None):
@@ -138,88 +148,76 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
 
     def _generar_turnos(self, patron_id, anio, numero_semana):
         try:
-            patron = PatronRotacion.objects.get(id=patron_id)
+            patron = PatronRotacion.objects.select_related('equipo').get(id=patron_id)
             
-            # Cálculo preciso de lunes y domingo de la semana ISO
-            # 4 de enero siempre está en la semana 1
+            # Cálculo de fechas preciso
             jan4 = datetime(anio, 1, 4)
             start_of_week1 = jan4 - timedelta(days=jan4.weekday())
-            fecha_inicio = start_of_week1 + timedelta(weeks=numero_semana - 1)
-            fecha_fin = fecha_inicio + timedelta(days=6)
+            fecha_inicio_date = (start_of_week1 + timedelta(weeks=numero_semana - 1)).date()
+            fecha_fin_date = fecha_inicio_date + timedelta(days=6)
 
             semana, _ = CalendarioSemanal.objects.get_or_create(
                 anio=anio, numero_semana=numero_semana,
                 defaults={
-                    'fecha_inicio_semana': fecha_inicio.date(),
-                    'fecha_fin_semana': fecha_fin.date()
+                    'fecha_inicio_semana': fecha_inicio_date,
+                    'fecha_fin_semana': fecha_fin_date
                 }
             )
         except PatronRotacion.DoesNotExist:
             return {'error': f'Patron {patron_id} no encontrado', 'status': status.HTTP_404_NOT_FOUND}
 
         equipo = patron.equipo
-        
-        # Limpiar turnos solo para este equipo en esta semana
         AsignacionTurno.objects.filter(semana=semana, usuario__equipo=equipo.id).delete()
 
+        # OPTIMIZACIÓN: Pre-fetch data
         empleados = list(equipo.miembros.all())
         secuencia = patron.secuencia
-        
         if not secuencia:
-            return None # No hay secuencia, no se genera nada
-            
-        dias = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
+            return None
+
+        # Cachear plantillas y vacaciones para evitar queries en el loop
+        plantillas_ids = [pid for pid in secuencia if pid is not None]
+        plantillas = {p.id: p for p in PlantillaTurno.objects.filter(id__in=plantillas_ids)}
+
+        vacaciones_qs = Vacacion.objects.filter(
+            usuario__in=empleados,
+            estado='aprobada',
+            fecha_inicio__lte=fecha_fin_date,
+            fecha_fin__gte=fecha_inicio_date
+        )
         
-        # Asegurarnos de usar date()
-        fecha_inicio_semana_date = semana.fecha_inicio_semana
-        if isinstance(fecha_inicio_semana_date, datetime):
-            fecha_inicio_semana_date = fecha_inicio_semana_date.date()
-            
+        # Uso de Set con tuplas (usuario_id, fecha) para acceso extremadamente rápido O(1)
+        vacaciones_set = set()
+        for v in vacaciones_qs:
+            curr = v.fecha_inicio
+            while curr <= v.fecha_fin:
+                vacaciones_set.add((v.usuario_id, curr))
+                curr += timedelta(days=1)
+
+        dias_nombres = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo']
         patron_fecha_inicio = patron.fecha_inicio
         if isinstance(patron_fecha_inicio, datetime):
             patron_fecha_inicio = patron_fecha_inicio.date()
 
-        # OPTIMIZACIÓN 1: Obtener TODAS las vacaciones de este equipo para esta semana en 1 sola query
-        vacaciones_aprobadas = Vacacion.objects.filter(
-            usuario__in=empleados,
-            estado='aprobada',
-            fecha_inicio__lte=fecha_fin,
-            fecha_fin__gte=fecha_inicio
-        )
-        
-        # Guardaremos las fechas de vacaciones por usuario en un diccionario para acceso ultra-rápido en memoria
-        vacaciones_por_usuario = {emp.id: [] for emp in empleados}
-        for vac in vacaciones_aprobadas:
-            current_date = vac.fecha_inicio
-            while current_date <= vac.fecha_fin:
-                vacaciones_por_usuario[vac.usuario_id].append(current_date)
-                current_date += timedelta(days=1)
-
-        # OPTIMIZACIÓN 2: Preparar la lista de asignaciones para hacer un único bulk_create
         nuevas_asignaciones = []
-
         for i, emp in enumerate(empleados):
-            for j, dia in enumerate(dias):
-                # Fórmula de rotación
-                fecha_dia = fecha_inicio_semana_date + timedelta(days=j)
-                desplazamiento_dias = (fecha_dia - patron_fecha_inicio).days
+            for j, dia_nombre in enumerate(dias_nombres):
+                fecha_dia = fecha_inicio_date + timedelta(days=j)
+                desplazamiento_total = (fecha_dia - patron_fecha_inicio).days
                 
-                plantilla_id = secuencia[ (i + desplazamiento_dias) % len(secuencia) ]
+                # Fórmula de rotación coherente
+                plantilla_id = secuencia[(i + desplazamiento_total) % len(secuencia)]
                 
-                if plantilla_id:
-                    # Verificar si la fecha actual está en las vacaciones del usuario
-                    if fecha_dia not in vacaciones_por_usuario[emp.id]:
-                        # No necesitamos la instancia PlantillaTurno, podemos pasar el ID directamente
-                        nuevas_asignaciones.append(
-                            AsignacionTurno(
-                                semana=semana,
-                                usuario=emp,
-                                dia=dia,
-                                turno_plantilla_id=plantilla_id
-                            )
-                        )
+                if plantilla_id and plantilla_id in plantillas:
+                    if (emp.id, fecha_dia) not in vacaciones_set:
+                        nuevas_asignaciones.append(AsignacionTurno(
+                            semana=semana,
+                            usuario=emp,
+                            dia=dia_nombre,
+                            turno_plantilla=plantillas[plantilla_id]
+                        ))
                         
-        # OPTIMIZACIÓN 3: Guardar en BD todo de golpe
+        # Inserción masiva final
         if nuevas_asignaciones:
             AsignacionTurno.objects.bulk_create(nuevas_asignaciones)
             
