@@ -64,7 +64,7 @@ class VacacionViewSet(viewsets.ModelViewSet):
             return Response({'error': 'No tienes permiso'}, status=status.HTTP_403_FORBIDDEN)
         
         nuevo_estado = request.data.get('estado')
-        if nuevo_estado not in ('aprobada', 'rechazada'):
+        if nuevo_estado not in ('aprobada', 'rechazada', 'pendiente'):
             return Response({'error': 'Estado inválido'}, status=status.HTTP_400_BAD_REQUEST)
         
         vacacion.estado = nuevo_estado
