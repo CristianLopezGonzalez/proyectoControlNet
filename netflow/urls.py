@@ -9,4 +9,5 @@ urlpatterns = [
     path('bolsa/', include('bolsa.urls')),
     path('auditoria/', include('auditoria.urls')),
     path('notificaciones/', include('notificaciones.urls')),
+    path('turnos-simples/', include('turnos_simples.urls')),
 ]

@@ -33,6 +33,7 @@ INSTALLED_APPS = [
     'auditoria',
     'corsheaders',
     'notificaciones',
+    'turnos_simples',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'
