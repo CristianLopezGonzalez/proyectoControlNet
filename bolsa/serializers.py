@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import BolsaDiasSaldo, BolsaDiasMovimiento
+from .models import BolsaDiasSaldo, BolsaDiasMovimiento, SolicitudCompensacionBolsa
 from usuarios.serializers import UsuarioSerializer
 
 
@@ -40,6 +40,15 @@ class BolsaDiasMovimientoSerializer(serializers.ModelSerializer):
 
 
 class CompensarSerializer(serializers.Serializer):
-    """Payload para compensar días manualmente entre dos usuarios."""
+    """Payload para crear solicitud de compensación."""
     usuario_destino_id = serializers.IntegerField()
     dias = serializers.IntegerField(min_value=1)
+
+
+class SolicitudCompensacionBolsaSerializer(serializers.ModelSerializer):
+    solicitante_detalle = UsuarioSerializer(source='solicitante', read_only=True)
+    receptor_detalle = UsuarioSerializer(source='receptor', read_only=True)
+
+    class Meta:
+        model = SolicitudCompensacionBolsa
+        fields = '__all__'

@@ -33,3 +33,21 @@ class BolsaDiasMovimiento(models.Model):
 
     def __str__(self):
         return f"{self.tipo} - {self.origen_usuario.nombre} → {self.destino_usuario.nombre} ({self.dias} días)"
+
+
+class SolicitudCompensacionBolsa(models.Model):
+    ESTADO_CHOICES = [
+        ('pendiente', 'Pendiente'),
+        ('aprobada', 'Aprobada'),
+        ('rechazada', 'Rechazada'),
+    ]
+
+    solicitante = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='compensaciones_enviadas')
+    receptor = models.ForeignKey(Usuario, on_delete=models.CASCADE, related_name='compensaciones_recibidas')
+    dias = models.IntegerField()
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_respuesta = models.DateTimeField(null=True, blank=True)
+
+    def __str__(self):
+        return f"Compensacion: {self.solicitante.nombre} -> {self.receptor.nombre} ({self.dias} dias) [{self.estado}]"

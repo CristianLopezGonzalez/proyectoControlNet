@@ -18,17 +18,19 @@ def _actualizar_saldo_bolsa(solicitante, receptor, modo_compensacion, solicitud)
     if modo_compensacion != 'bolsa':
         return
 
+    dias_deuda = 7 if solicitud.tipo == 'semana' else 1
+
     # Normalizar el par (siempre usuario_a < usuario_b por id)
     if solicitante.id < receptor.id:
         usuario_a, usuario_b = solicitante, receptor
         saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
-        # El solicitante (a) debe un día al receptor (b) → b gana un punto a favor
-        saldo_obj.saldo_dias_a_favor_de_b += 1
+        # El solicitante (a) debe al receptor (b) → b gana puntos a favor
+        saldo_obj.saldo_dias_a_favor_de_b += dias_deuda
     else:
         usuario_a, usuario_b = receptor, solicitante
         saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
-        # El solicitante (b) debe un día al receptor (a) → a gana un punto a favor
-        saldo_obj.saldo_dias_a_favor_de_a += 1
+        # El solicitante (b) debe al receptor (a) → a gana puntos a favor
+        saldo_obj.saldo_dias_a_favor_de_a += dias_deuda
 
     saldo_obj.save()
 
@@ -36,7 +38,7 @@ def _actualizar_saldo_bolsa(solicitante, receptor, modo_compensacion, solicitud)
         saldo=saldo_obj,
         origen_usuario=solicitante,
         destino_usuario=receptor,
-        dias=1,
+        dias=dias_deuda,
         tipo='genera_deuda',
         solicitud_intercambio=solicitud,
     )
@@ -47,7 +49,50 @@ def _actualizar_saldo_bolsa(solicitante, receptor, modo_compensacion, solicitud)
         usuario=solicitante,
         entidad='bolsa',
         id_entidad=saldo_obj.id,
-        metadata={'movimiento_id': movimiento.id, 'tipo': 'genera_deuda', 'dias': 1}
+        metadata={'movimiento_id': movimiento.id, 'tipo': 'genera_deuda', 'dias': dias_deuda}
+    )
+
+
+def _actualizar_saldo_bolsa_rechazo(solicitante, receptor, modo_compensacion, solicitud):
+    """
+    Si el receptor rechaza la solicitud de cambio, el sistema registra una deuda en la bolsa:
+    el receptor (que rechaza) pasa a deber días al solicitante.
+    """
+    if modo_compensacion != 'bolsa':
+        return
+
+    dias_deuda = 7 if solicitud.tipo == 'semana' else 1
+
+    # Normalizar el par (siempre usuario_a < usuario_b por id)
+    if solicitante.id < receptor.id:
+        usuario_a, usuario_b = solicitante, receptor
+        saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
+        # El receptor (b) debe al solicitante (a) → a gana puntos a favor
+        saldo_obj.saldo_dias_a_favor_de_a += dias_deuda
+    else:
+        usuario_a, usuario_b = receptor, solicitante
+        saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
+        # El receptor (a) debe al solicitante (b) → b gana puntos a favor
+        saldo_obj.saldo_dias_a_favor_de_b += dias_deuda
+
+    saldo_obj.save()
+
+    movimiento = BolsaDiasMovimiento.objects.create(
+        saldo=saldo_obj,
+        origen_usuario=receptor,      # el que genera la deuda es el que rechaza
+        destino_usuario=solicitante,  # a favor del solicitante
+        dias=dias_deuda,
+        tipo='genera_deuda',
+        solicitud_intercambio=solicitud,
+    )
+
+    from auditoria.models import Auditoria
+    Auditoria.objects.create(
+        tipo_evento='actualizar_bolsa',
+        usuario=receptor,
+        entidad='bolsa',
+        id_entidad=saldo_obj.id,
+        metadata={'movimiento_id': movimiento.id, 'tipo': 'genera_deuda', 'dias': dias_deuda, 'motivo': 'rechazo'}
     )
 
 
@@ -80,6 +125,19 @@ class IntercambioListCreateView(APIView):
                 return Response({'error': 'La asignación de origen no te pertenece.'}, status=status.HTTP_403_FORBIDDEN)
             if data.get('asignacion_destino') and data['asignacion_destino'].usuario != data['receptor']:
                 return Response({'error': 'La asignación de destino no pertenece al receptor.'}, status=status.HTTP_400_BAD_REQUEST)
+
+            asig_origen = data['asignacion_origen']
+
+            # Validación de solapes de turnos (Regla 1: No se permiten solapes de tarde/turno para un mismo usuario ese día)
+            # Si el receptor ya tiene un turno asignado ese día en esa misma semana, no puede recibir el de origen.
+            from turnos.models import AsignacionTurno
+            if AsignacionTurno.objects.filter(
+                semana=asig_origen.semana,
+                usuario=data['receptor'],
+                dia=asig_origen.dia,
+                estado='asignado'
+            ).exists():
+                return Response({'error': f"El receptor ya tiene un turno asignado el {asig_origen.dia} de esa semana."}, status=status.HTTP_400_BAD_REQUEST)
 
             solicitud = serializer.save(solicitante=request.user)
 
@@ -148,11 +206,32 @@ class IntercambioAceptarView(APIView):
         solicitud.fecha_respuesta = timezone.now()
         solicitud.save()
 
-        solicitud.asignacion_origen.estado = 'intercambiado'
-        solicitud.asignacion_origen.save()
+        # Al aceptar, transferimos el turno del origen al receptor
+        asig_origen = solicitud.asignacion_origen
+        asig_origen.estado = 'intercambiado'
+        asig_origen.save()
+        
+        AsignacionTurno.objects.create(
+            semana=asig_origen.semana,
+            usuario=solicitud.receptor,
+            dia=asig_origen.dia,
+            turno_plantilla=asig_origen.turno_plantilla,
+            estado='asignado'
+        )
+
         if solicitud.asignacion_destino:
-            solicitud.asignacion_destino.estado = 'intercambiado'
-            solicitud.asignacion_destino.save()
+            # Si hay un turno de vuelta, lo transferimos del receptor al solicitante
+            asig_destino = solicitud.asignacion_destino
+            asig_destino.estado = 'intercambiado'
+            asig_destino.save()
+            
+            AsignacionTurno.objects.create(
+                semana=asig_destino.semana,
+                usuario=solicitud.solicitante,
+                dia=asig_destino.dia,
+                turno_plantilla=asig_destino.turno_plantilla,
+                estado='asignado'
+            )
 
         _actualizar_saldo_bolsa(
             solicitud.solicitante,
@@ -178,6 +257,11 @@ class IntercambioAceptarView(APIView):
             enlace_entidad=f"intercambios/{solicitud.id}"
         )
 
+        from usuarios.utils_google_calendar import pre_sync_google_calendar
+        # Sincronizar calendarios de ambos involucrados
+        pre_sync_google_calendar(solicitud.receptor, {"tipo": "intercambio_aceptado", "rol": "receptor"})
+        pre_sync_google_calendar(solicitud.solicitante, {"tipo": "intercambio_aceptado", "rol": "solicitante"})
+
         return Response(SolicitudIntercambioSerializer(solicitud).data)
 
 
@@ -199,6 +283,14 @@ class IntercambioRechazarView(APIView):
         solicitud.estado = 'rechazada'
         solicitud.fecha_respuesta = timezone.now()
         solicitud.save()
+
+        # Registrar deuda en la bolsa por el rechazo
+        _actualizar_saldo_bolsa_rechazo(
+            solicitud.solicitante,
+            solicitud.receptor,
+            solicitud.modo_compensacion,
+            solicitud
+        )
 
         Auditoria.objects.create(
             tipo_evento='rechazar_intercambio',
