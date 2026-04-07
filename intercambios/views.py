@@ -92,6 +92,16 @@ class IntercambioListCreateView(APIView):
                 metadata={'tipo': solicitud.tipo, 'receptor': solicitud.receptor.id}
             )
 
+            # Notificacion
+            from notificaciones.utils import crear_notificacion
+            crear_notificacion(
+                usuario=solicitud.receptor,
+                tipo='intercambio_solicitado',
+                titulo="Nueva Solicitud de Intercambio",
+                mensaje=f"{request.user.nombre} te ha solicitado un intercambio de turno.",
+                enlace_entidad=f"intercambios/{solicitud.id}"
+            )
+
             return Response(
                 SolicitudIntercambioSerializer(solicitud).data,
                 status=status.HTTP_201_CREATED
@@ -159,6 +169,15 @@ class IntercambioAceptarView(APIView):
             metadata={'modo_compensacion': solicitud.modo_compensacion}
         )
 
+        from notificaciones.utils import crear_notificacion
+        crear_notificacion(
+            usuario=solicitud.solicitante,
+            tipo='intercambio_aprobado',
+            titulo="Intercambio Aceptado",
+            mensaje=f"{request.user.nombre} ha aceptado tu solicitud de intercambio.",
+            enlace_entidad=f"intercambios/{solicitud.id}"
+        )
+
         return Response(SolicitudIntercambioSerializer(solicitud).data)
 
 
@@ -186,6 +205,15 @@ class IntercambioRechazarView(APIView):
             usuario=request.user,
             entidad='solicitud',
             id_entidad=solicitud.id
+        )
+
+        from notificaciones.utils import crear_notificacion
+        crear_notificacion(
+            usuario=solicitud.solicitante,
+            tipo='intercambio_rechazado',
+            titulo="Intercambio Rechazado",
+            mensaje=f"{request.user.nombre} ha rechazado tu solicitud de intercambio.",
+            enlace_entidad=f"intercambios/{solicitud.id}"
         )
 
         return Response(SolicitudIntercambioSerializer(solicitud).data)

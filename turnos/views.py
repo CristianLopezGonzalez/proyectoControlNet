@@ -22,6 +22,7 @@ from .serializers import (
 )
 from usuarios.models import Usuario, Equipo
 from usuarios.permissions import IsAdminOrSupervisor
+from notificaciones.utils import crear_notificacion
 
 
 class PlantillaTurnoViewSet(viewsets.ModelViewSet):
@@ -69,6 +70,17 @@ class VacacionViewSet(viewsets.ModelViewSet):
         
         vacacion.estado = nuevo_estado
         vacacion.save()
+
+        # Notificar al empleado
+        if nuevo_estado in ('aprobada', 'rechazada'):
+            crear_notificacion(
+                usuario=vacacion.usuario,
+                tipo=f'vacacion_{nuevo_estado}',
+                titulo=f"Vacación {nuevo_estado.capitalize()}",
+                mensaje=f"Tu solicitud de vacaciones del {vacacion.fecha_inicio} ha sido {nuevo_estado}.",
+                enlace_entidad=f"turnos/vacaciones/{vacacion.id}"
+            )
+
         return Response(VacacionSerializer(vacacion).data)
 
 
@@ -76,6 +88,19 @@ class IncidenciaViewSet(viewsets.ModelViewSet):
     queryset = Incidencia.objects.all()
     serializer_class = IncidenciaSerializer
     permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        incidencia = serializer.save(usuario=self.request.user)
+        # Notificar al supervisor
+        equipo = getattr(self.request.user, 'equipo', None)
+        if equipo and equipo.supervisor:
+            crear_notificacion(
+                usuario=equipo.supervisor,
+                tipo='incidencia',
+                titulo="Nueva Incidencia",
+                mensaje=f"{self.request.user.nombre} ha reportado una incidencia.",
+                enlace_entidad=f"turnos/incidencias/{incidencia.id}"
+            )
 
     @action(detail=True, methods=['post'], url_path='resolver')
     def resolver(self, request, pk=None):
@@ -154,6 +179,21 @@ class CalendarioSemanalViewSet(viewsets.ModelViewSet):
         semana = self.get_object()
         semana.estado = 'publicado'
         semana.save()
+
+        # Notificar a la plantilla afectada (todos los que tengan un turno asignado)
+        asignaciones = AsignacionTurno.objects.filter(semana=semana).select_related('usuario')
+        notificados = set()
+        for asig in asignaciones:
+            if asig.usuario.id not in notificados:
+                crear_notificacion(
+                    usuario=asig.usuario,
+                    tipo='semana_publicada',
+                    titulo=f"Cuadrante Semanal Publicado",
+                    mensaje=f"Tus horarios para la semana {semana.numero_semana} ({semana.anio}) ya están disponibles.",
+                    enlace_entidad=f"?anio={semana.anio}&mes={semana.fecha_inicio_semana.month if hasattr(semana.fecha_inicio_semana, 'month') else '1'}"
+                )
+                notificados.add(asig.usuario.id)
+
         return Response(CalendarioSemanalSerializer(semana).data)
 
     def _generar_turnos(self, patron_id, anio, numero_semana):

@@ -31,7 +31,8 @@ INSTALLED_APPS = [
     'intercambios',
     'bolsa',
     'auditoria',
-    "corsheaders",
+    'corsheaders',
+    'notificaciones',
 ]
 
 AUTH_USER_MODEL = 'usuarios.Usuario'

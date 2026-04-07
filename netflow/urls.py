@@ -8,4 +8,5 @@ urlpatterns = [
     path('intercambios/', include('intercambios.urls')),
     path('bolsa/', include('bolsa.urls')),
     path('auditoria/', include('auditoria.urls')),
+    path('notificaciones/', include('notificaciones.urls')),
 ]
