@@ -16,6 +16,68 @@ from usuarios.models import Usuario
 from usuarios.permissions import IsAdminOrSupervisor
 from notificaciones.utils import crear_notificacion
 from auditoria.models import Auditoria
+from bolsa.models import BolsaDiasSaldo, BolsaDiasMovimiento
+
+def _actualizar_bolsa_semanal(solicitante, receptor, modo_compensacion, solicitud):
+    if modo_compensacion != 'bolsa':
+        return
+    # Cada semana se contabiliza como 7 días de deuda
+    dias_deuda = 7
+    if solicitante.id < receptor.id:
+        usuario_a, usuario_b = solicitante, receptor
+        saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
+        saldo_obj.saldo_dias_a_favor_de_b += dias_deuda
+    else:
+        usuario_a, usuario_b = receptor, solicitante
+        saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
+        saldo_obj.saldo_dias_a_favor_de_a += dias_deuda
+
+    saldo_obj.save()
+    movimiento = BolsaDiasMovimiento.objects.create(
+        saldo=saldo_obj,
+        origen_usuario=solicitante,
+        destino_usuario=receptor,
+        dias=dias_deuda,
+        tipo='genera_deuda',
+        solicitud_semanal=solicitud,
+    )
+    Auditoria.objects.create(
+        tipo_evento='actualizar_bolsa',
+        usuario=solicitante,
+        entidad='bolsa',
+        id_entidad=saldo_obj.id,
+        metadata={'movimiento_id': movimiento.id, 'tipo': 'genera_deuda', 'dias': dias_deuda}
+    )
+
+def _actualizar_bolsa_rechazo_semanal(solicitante, receptor, modo_compensacion, solicitud):
+    if modo_compensacion != 'bolsa':
+        return
+    dias_deuda = 7
+    if solicitante.id < receptor.id:
+        usuario_a, usuario_b = solicitante, receptor
+        saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
+        saldo_obj.saldo_dias_a_favor_de_a += dias_deuda
+    else:
+        usuario_a, usuario_b = receptor, solicitante
+        saldo_obj, _ = BolsaDiasSaldo.objects.get_or_create(usuario_a=usuario_a, usuario_b=usuario_b)
+        saldo_obj.saldo_dias_a_favor_de_b += dias_deuda
+
+    saldo_obj.save()
+    movimiento = BolsaDiasMovimiento.objects.create(
+        saldo=saldo_obj,
+        origen_usuario=receptor,
+        destino_usuario=solicitante,
+        dias=dias_deuda,
+        tipo='genera_deuda',
+        solicitud_semanal=solicitud,
+    )
+    Auditoria.objects.create(
+        tipo_evento='actualizar_bolsa',
+        usuario=receptor,
+        entidad='bolsa',
+        id_entidad=saldo_obj.id,
+        metadata={'movimiento_id': movimiento.id, 'tipo': 'genera_deuda', 'dias': dias_deuda, 'motivo': 'rechazo'}
+    )
 
 
 class TurnoSemanalViewSet(viewsets.ModelViewSet):
@@ -178,6 +240,14 @@ class SolicitudTurnoSemanalViewSet(viewsets.ModelViewSet):
             turno_destino.estado = 'intercambiado'
             turno_destino.save()
 
+        # Generar deuda en la Bolsa de Días
+        _actualizar_bolsa_semanal(
+            solicitante=solicitud.solicitante,
+            receptor=request.user,
+            modo_compensacion=solicitud.modo_compensacion,
+            solicitud=solicitud
+        )
+
         Auditoria.objects.create(
             tipo_evento='aceptar_intercambio',
             usuario=request.user,
@@ -208,6 +278,14 @@ class SolicitudTurnoSemanalViewSet(viewsets.ModelViewSet):
         solicitud.estado = 'rechazada'
         solicitud.fecha_respuesta = timezone.now()
         solicitud.save()
+
+        # Registrar penalización en la bolsa por rechazo
+        _actualizar_bolsa_rechazo_semanal(
+            solicitante=solicitud.solicitante,
+            receptor=request.user,
+            modo_compensacion=solicitud.modo_compensacion,
+            solicitud=solicitud
+        )
 
         Auditoria.objects.create(
             tipo_evento='rechazar_intercambio',

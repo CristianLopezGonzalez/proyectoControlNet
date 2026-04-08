@@ -27,7 +27,7 @@ class SolicitudTurnoSemanalSerializer(serializers.ModelSerializer):
             'receptor', 'receptor_detalle',
             'turno_origen', 'turno_origen_detalle',
             'turno_destino', 'turno_destino_detalle',
-            'motivo', 'estado', 'fecha_creacion', 'fecha_respuesta'
+            'motivo', 'modo_compensacion', 'estado', 'fecha_creacion', 'fecha_respuesta'
         )
         read_only_fields = ('solicitante', 'estado', 'fecha_creacion', 'fecha_respuesta')
 
@@ -35,7 +35,7 @@ class SolicitudTurnoSemanalSerializer(serializers.ModelSerializer):
 class CrearSolicitudTurnoSemanalSerializer(serializers.ModelSerializer):
     class Meta:
         model = SolicitudTurnoSemanal
-        fields = ('receptor', 'turno_origen', 'turno_destino', 'motivo')
+        fields = ('receptor', 'turno_origen', 'turno_destino', 'motivo', 'modo_compensacion')
 
     def validate(self, data):
         request = self.context['request']

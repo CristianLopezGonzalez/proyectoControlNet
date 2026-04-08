@@ -29,6 +29,7 @@ class BolsaDiasMovimiento(models.Model):
     dias = models.IntegerField()
     tipo = models.CharField(max_length=20, choices=TIPO_CHOICES)
     solicitud_intercambio = models.ForeignKey(SolicitudIntercambio, on_delete=models.SET_NULL, null=True, blank=True)
+    solicitud_semanal = models.ForeignKey('turnos_simples.SolicitudTurnoSemanal', on_delete=models.SET_NULL, null=True, blank=True)
     fecha = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):

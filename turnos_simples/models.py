@@ -44,6 +44,10 @@ class SolicitudTurnoSemanal(models.Model):
         ('rechazada', 'Rechazada'),
         ('cancelada', 'Cancelada'),
     ]
+    MODO_COMPENSACION_CHOICES = [
+        ('bolsa', 'Bolsa de días'),
+        ('inmediata', 'Inmediata'),
+    ]
 
     solicitante = models.ForeignKey(
         Usuario,
@@ -69,6 +73,7 @@ class SolicitudTurnoSemanal(models.Model):
         null=True, blank=True
     )
     motivo = models.TextField(blank=True)
+    modo_compensacion = models.CharField(max_length=20, choices=MODO_COMPENSACION_CHOICES, default='bolsa')
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='pendiente')
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     fecha_respuesta = models.DateTimeField(null=True, blank=True)
