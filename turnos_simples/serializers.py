@@ -33,26 +33,54 @@ class SolicitudTurnoSemanalSerializer(serializers.ModelSerializer):
 
 
 class CrearSolicitudTurnoSemanalSerializer(serializers.ModelSerializer):
+    fecha_inicio = serializers.DateField(write_only=True)
+    fecha_fin = serializers.DateField(write_only=True)
+    fecha_inicio_destino = serializers.DateField(write_only=True, required=False)
+    fecha_fin_destino = serializers.DateField(write_only=True, required=False)
+    comentario = serializers.CharField(source='motivo', required=False, allow_blank=True)
+
     class Meta:
         model = SolicitudTurnoSemanal
-        fields = ('receptor', 'turno_origen', 'turno_destino', 'motivo', 'modo_compensacion')
+        fields = ('receptor', 'fecha_inicio', 'fecha_fin', 'fecha_inicio_destino', 'fecha_fin_destino', 'comentario')
 
     def validate(self, data):
         request = self.context['request']
-        turno_origen = data.get('turno_origen')
-        turno_destino = data.get('turno_destino')
+        user = request.user
         receptor = data.get('receptor')
 
-        # El turno de origen debe pertenecer al solicitante
-        if turno_origen.usuario != request.user:
-            raise serializers.ValidationError('El turno de origen no te pertenece.')
-
-        # No puedes solicitarte a ti mismo
-        if receptor == request.user:
+        if receptor == user:
             raise serializers.ValidationError('No puedes solicitar un intercambio contigo mismo.')
 
-        # Si hay turno destino, debe pertenecer al receptor
-        if turno_destino and turno_destino.usuario != receptor:
-            raise serializers.ValidationError('El turno de destino no pertenece al receptor.')
+        # Buscar el turno origen
+        turno_origen = TurnoSemanal.objects.filter(
+            usuario=user,
+            semana__fecha_inicio_semana__lte=data['fecha_inicio'],
+            semana__fecha_fin_semana__gte=data['fecha_fin']
+        ).first()
+
+        if not turno_origen:
+            raise serializers.ValidationError({"fecha_inicio": "No tienes un turno asignado en las fechas solicitadas."})
+
+        data['turno_origen'] = turno_origen
+
+        # Buscar el turno destino si es mutuo
+        if 'fecha_inicio_destino' in data and 'fecha_fin_destino' in data:
+            turno_destino = TurnoSemanal.objects.filter(
+                usuario=receptor,
+                semana__fecha_inicio_semana__lte=data['fecha_inicio_destino'],
+                semana__fecha_fin_semana__gte=data['fecha_fin_destino']
+            ).first()
+
+            if not turno_destino:
+                raise serializers.ValidationError({"fecha_inicio_destino": "El compañero no tiene turno en esas fechas."})
+            data['turno_destino'] = turno_destino
 
         return data
+
+    def create(self, validated_data):
+        # Limpiar los campos virtuales de fecha para que ModelSerializer.create funcione
+        validated_data.pop('fecha_inicio', None)
+        validated_data.pop('fecha_fin', None)
+        validated_data.pop('fecha_inicio_destino', None)
+        validated_data.pop('fecha_fin_destino', None)
+        return super().create(validated_data)
